@@ -55,7 +55,7 @@ public class MessageChannel extends ChannelDuplexHandler {
 	/**
 	 * Sequence number of last acknowledged packet
 	 */
-	private int							ackSentCounter	= -1;
+	private int							ackSentCounter	= 0;
 
 	private final Queue<WriteEvent>		messageBuffer	= new LinkedList<>();
 
@@ -123,7 +123,7 @@ public class MessageChannel extends ChannelDuplexHandler {
 			@Override
 			public void run()
 			{
-				MessageChannel.this.timer1.start(MessageChannel.this.options.getTimeout1());
+				// t1 is started by what it supervises: a sent I frame, STARTDT, STOPDT or TESTFR
 				MessageChannel.this.timer3.start(MessageChannel.this.options.getTimeout3());
 			}
 		};
@@ -254,6 +254,13 @@ public class MessageChannel extends ChannelDuplexHandler {
 
 		// handle ack
 		this.ackBuffer.gotAck(receiveSequenceNumber);
+		// t1 runs while any sent I frame is unacknowledged, from the oldest one (clause 5.3)
+		if (this.ackBuffer.getOutstandingAcks() == 0) {
+			this.timer1.stop();
+		}
+		else {
+			this.timer1.restart(this.options.getTimeout1());
+		}
 
 		// now try to flush messages from the buffer
 		sendFromBuffer();
@@ -337,12 +344,14 @@ public class MessageChannel extends ChannelDuplexHandler {
 				{
 					case REQUEST_START:
 						ctx.write(new UnnumberedControl(Function.STARTDT_ACT), promise);
+						this.timer1.start(this.options.getTimeout1()); // closed unless confirmed within t1
 						break;
 					case CONFIRM_START:
 						ctx.write(new UnnumberedControl(Function.STARTDT_CONFIRM), promise);
 						break;
 					case REQUEST_STOP:
 						ctx.write(new UnnumberedControl(Function.STOPDT_ACT), promise);
+						this.timer1.start(this.options.getTimeout1()); // closed unless confirmed within t1
 						break;
 					case CONFIRM_STOP:
 						ctx.write(new UnnumberedControl(Function.STOPDT_CONFIRM), promise);
@@ -433,14 +442,28 @@ public class MessageChannel extends ChannelDuplexHandler {
 
 		// we can stop timer #2 here ... will be restarted by receive
 		this.timer2.stop();
+		// and the frame must be acknowledged within t1; already running for an older one, it is left alone
+		this.timer1.start(this.options.getTimeout1());
 	}
 
 	private void handleFunction(final Function function)
 	{
 		logger.debug("Handle U-format function: {}", function);
 
-		this.timer1.stop();
 		this.timer3.restart(this.options.getTimeout3());
+		switch (function)
+		{
+			case STARTDT_CONFIRM:
+			case STOPDT_CONFIRM:
+			case TESTFR_CONFIRM:
+				// the confirmation t1 was waiting for; it still runs for unacknowledged I frames
+				if (this.ackBuffer.getOutstandingAcks() == 0) {
+					this.timer1.stop();
+				}
+				break;
+			default:
+				break;
+		}
 
 		switch (function)
 		{
@@ -464,7 +487,7 @@ public class MessageChannel extends ChannelDuplexHandler {
 				// no-op
 				return;
 			default:
-				throw new DecoderException(String.format("Cannot handle function: %s" + function));
+				throw new DecoderException(String.format("Cannot handle function: %s", function));
 		}
 	}
 

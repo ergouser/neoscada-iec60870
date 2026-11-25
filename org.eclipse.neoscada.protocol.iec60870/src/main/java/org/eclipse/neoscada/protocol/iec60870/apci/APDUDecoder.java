@@ -47,6 +47,9 @@ public class APDUDecoder extends ByteToMessageDecoder {
 
 		final short len = in.getUnsignedByte(in.readerIndex() + 1);
 
+		if (len < 4) {
+			throw new DecoderException(String.format("APCI needs at least 4 bytes of control fields, but has %s", len));
+		}
 		if (len > Constants.APCI_MAX_DATA_LENGTH) {
 			throw new DecoderException(String.format("APCI has a maximum length of %s bytes, but we received %s",
 					Constants.APCI_MAX_DATA_LENGTH, len));
