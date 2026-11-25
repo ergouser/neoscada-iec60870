@@ -1,0 +1,8 @@
+# JitPack builds a tag on JDK 25 where its image offers it, else 21; the classes run on 21 and later.
+jdk:
+  - openjdk21
+before_install:
+  - sdk install java 25.0.2-zulu || true
+  - sdk use java 25.0.2-zulu || true
+install:
+  - ./gradlew publishToMavenLocal -x test --no-daemon

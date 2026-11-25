@@ -4,23 +4,38 @@ plugins {
 
 ext {
 	nettyVersion = '4.1.130.Final'
+	guavaVersion = '33.3.1-jre'
+	slf4jVersion = '2.0.16'
+	junitVersion = '5.11.4'
+	logbackVersion = '1.5.18'
 }
+
+// The version published, and the one JitPack builds from a tag of the same name.
+def releaseVersion = '14.1.0'
 
 subprojects { subProject ->
 
-	subProject.version = '14.0.0'
+	subProject.version = releaseVersion
 	subProject.apply plugin: 'java-library'
 	subProject.apply plugin: 'maven-publish'
 
 	subProject.java {
+		// Built on any JDK from 21; the classes run on 21 and later.
 		sourceCompatibility = JavaVersion.VERSION_21
 		targetCompatibility = JavaVersion.VERSION_21
+		withSourcesJar()
+		withJavadocJar()
+	}
+
+	subProject.tasks.withType(JavaCompile).configureEach {
+		options.release = 21
+		options.encoding = 'UTF-8'
 	}
 
 	subProject.javadoc {
 		options {
 			addStringOption('Xdoclint:none', '-quiet')
-			source = JavaVersion.VERSION_21.toString()
+			encoding = 'UTF-8'
 		}
 	}
 
@@ -28,8 +43,44 @@ subprojects { subProject ->
 		mavenCentral()
 	}
 
-	// Add publishing repositories here, e.g. maven { url = '...' }.
-	// publishToMavenLocal works without any.
-	subProject.ext.publishRepositories = {
+	subProject.dependencies {
+		testImplementation platform("org.junit:junit-bom:${rootProject.junitVersion}")
+		testImplementation 'org.junit.jupiter:junit-jupiter'
+		// The tests carried over from Eclipse NeoSCADA are JUnit 4.
+		testImplementation 'junit:junit:4.13.2'
+		testRuntimeOnly 'org.junit.vintage:junit-vintage-engine'
+		testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+		testRuntimeOnly "ch.qos.logback:logback-classic:${rootProject.logbackVersion}"
+	}
+
+	subProject.tasks.withType(Test).configureEach {
+		useJUnitPlatform {
+			// Tests that need Docker, run by the interop task.
+			excludeTags 'interop'
+		}
+		testLogging {
+			events 'failed'
+			exceptionFormat 'full'
+		}
+	}
+
+	subProject.publishing {
+		publications {
+			mavenJava(MavenPublication) {
+				from subProject.components.java
+				pom {
+					description = "Eclipse NeoSCADA's IEC 60870-5-104 implementation, extracted by Syncron Tech"
+					licenses {
+						license {
+							name = 'Eclipse Public License 1.0'
+							url = 'https://www.eclipse.org/legal/epl-v10.html'
+						}
+					}
+					scm {
+						url = 'https://github.com/ergouser/neoscada-iec60870'
+					}
+				}
+			}
+		}
 	}
 }
