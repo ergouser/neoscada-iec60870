@@ -13,18 +13,21 @@ package org.eclipse.neoscada.protocol.iec60870.server;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.neoscada.protocol.iec60870.ProtocolOptions;
 import org.eclipse.neoscada.protocol.iec60870.apci.APDUDecoder;
 import org.eclipse.neoscada.protocol.iec60870.apci.APDUEncoder;
 import org.eclipse.neoscada.protocol.iec60870.apci.MessageChannel;
 import org.eclipse.neoscada.protocol.iec60870.asdu.MessageManager;
+import org.eclipse.neoscada.protocol.iec60870.tls.TlsOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.ChannelException;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
@@ -55,6 +58,8 @@ public class Server implements AutoCloseable {
 
 	private final MessageManager	manager;
 
+	private final TlsOptions		tls;
+
 	public Server(final short port, final ProtocolOptions options, final List<ServerModule> modules)
 	{
 		this(0xFFFF & port, options, modules);
@@ -67,7 +72,20 @@ public class Server implements AutoCloseable {
 
 	public Server(final SocketAddress address, final ProtocolOptions options, final List<ServerModule> modules)
 	{
+		this(address, options, modules, null);
+	}
+
+	/**
+	 * A server, over TLS when {@code tls} is given.
+	 *
+	 * @throws io.netty.channel.ChannelException
+	 *             when the address cannot be bound
+	 */
+	public Server(final SocketAddress address, final ProtocolOptions options, final List<ServerModule> modules,
+			final TlsOptions tls)
+	{
 		this.options = options;
+		this.tls = tls;
 
 		this.manager = new MessageManager(this.options);
 
@@ -92,7 +110,13 @@ public class Server implements AutoCloseable {
 			module.initializeServer(this, this.manager);
 		}
 
-		this.channel = this.bootstrap.bind(address).channel();
+		final ChannelFuture bound = this.bootstrap.bind(address).awaitUninterruptibly();
+		if (!bound.isSuccess()) {
+			this.bossGroup.shutdownGracefully();
+			this.workerGroup.shutdownGracefully();
+			throw new ChannelException("Unable to listen on " + address, bound.cause());
+		}
+		this.channel = bound.channel();
 	}
 
 	public Server(final short port, final List<ServerModule> modules)
@@ -105,8 +129,18 @@ public class Server implements AutoCloseable {
 		this(port, new ProtocolOptions.Builder().build(), modules);
 	}
 
+	/** The address listened on, with the port the system chose if it was bound to port 0. */
+	public SocketAddress getLocalAddress()
+	{
+		return this.channel.localAddress();
+	}
+
 	protected void handleInitChannel(final SocketChannel ch)
 	{
+		if (this.tls != null) {
+			this.tls.install(ch.pipeline(), ch.alloc(), false, null, 0);
+		}
+
 		// add the APCI/APDU handler
 
 		ch.pipeline().addLast(new APDUDecoder());
@@ -165,9 +199,10 @@ public class Server implements AutoCloseable {
 			module.dispose();
 		}
 
-		Future<?> bossGroupFuture = this.bossGroup.shutdownGracefully();
+		// the channel is closed, so there is nothing to wait quietly for; stop both groups at once
+		final Future<?> bossGroupFuture = this.bossGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS);
+		final Future<?> workerGroupFuture = this.workerGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS);
 		bossGroupFuture.get();
-		Future<?> workerGroupFuture = this.workerGroup.shutdownGracefully();
 		workerGroupFuture.get();
 	}
 }

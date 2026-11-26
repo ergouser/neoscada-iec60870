@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.neoscada.protocol.iec60870.ProtocolOptions;
+import org.eclipse.neoscada.protocol.iec60870.tls.TlsOptions;
 import org.eclipse.scada.utils.concurrent.ScheduledExportedExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +64,8 @@ public class AutoConnectClient implements AutoCloseable {
 
 	private final ModulesFactory				modulesFactory;
 
+	private final TlsOptions					tls;
+
 	public static enum State
 	{
 		SLEEPING, DISCONNECTED, LOOKUP, CONNECTING, CONNECTED;
@@ -81,6 +84,14 @@ public class AutoConnectClient implements AutoCloseable {
 	public AutoConnectClient(final String host, final int port, final ProtocolOptions options,
 			final ModulesFactory modulesFactory, final StateListener stateListener)
 	{
+		this(host, port, options, modulesFactory, stateListener, null);
+	}
+
+	/** A client that reconnects, over TLS when {@code tls} is given. */
+	public AutoConnectClient(final String host, final int port, final ProtocolOptions options,
+			final ModulesFactory modulesFactory, final StateListener stateListener, final TlsOptions tls)
+	{
+		this.tls = tls;
 		this.executor = new ScheduledExportedExecutorService(makeName(host, port), 1);
 		this.stateListener = stateListener;
 		this.options = options;
@@ -134,6 +145,7 @@ public class AutoConnectClient implements AutoCloseable {
 		if (address.isUnresolved()) {
 			final UnresolvedAddressException e = new UnresolvedAddressException();
 			handleDisconnected(e);
+			return;
 		}
 
 		synchronized (this) {
@@ -162,7 +174,8 @@ public class AutoConnectClient implements AutoCloseable {
 			return;
 		}
 
-		this.client = new Client(resolvedAddress, this.listener, this.options, this.modulesFactory.createModules());
+		this.client = new Client(resolvedAddress, this.listener, this.options, this.modulesFactory.createModules(),
+				this.tls);
 		this.client.connect();
 	}
 

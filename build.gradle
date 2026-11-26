@@ -54,13 +54,17 @@ subprojects { subProject ->
 	}
 
 	subProject.tasks.withType(Test).configureEach {
-		useJUnitPlatform {
-			// Tests that need Docker, run by the interop task.
-			excludeTags 'interop'
-		}
+		useJUnitPlatform()
 		testLogging {
 			events 'failed'
 			exceptionFormat 'full'
+		}
+	}
+
+	subProject.tasks.named('test', Test) {
+		useJUnitPlatform {
+			// Tests that need Docker, run by the interop task.
+			excludeTags 'interop'
 		}
 	}
 

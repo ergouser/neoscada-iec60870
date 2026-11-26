@@ -1,0 +1,20 @@
+// Tests that need a client and a server together: the loopback and TLS suites, and the interoperability suite
+// against an independent implementation (tagged "interop", run by the interop task). Nothing here is published.
+
+dependencies {
+    testImplementation project(':org.eclipse.neoscada.protocol.iec60870.client.data')
+    testImplementation project(':org.eclipse.neoscada.protocol.iec60870.server.data')
+    testImplementation project(':org.syncrontech.neoscada.protocol.iec60870.server.system')
+    testImplementation 'org.awaitility:awaitility:4.2.2'
+}
+
+tasks.withType(PublishToMavenRepository).configureEach { enabled = false }
+tasks.withType(PublishToMavenLocal).configureEach { enabled = false }
+
+tasks.register('interop', Test) {
+    description = 'Runs this stack against the IEC60870-5-104-Simulator in Docker.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'interop' }
+}

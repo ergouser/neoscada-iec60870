@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.neoscada.protocol.iec60870.client;
 
+import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +23,7 @@ import org.eclipse.neoscada.protocol.iec60870.apci.APDUEncoder;
 import org.eclipse.neoscada.protocol.iec60870.apci.MessageChannel;
 import org.eclipse.neoscada.protocol.iec60870.asdu.MessageManager;
 import org.eclipse.neoscada.protocol.iec60870.io.Module;
+import org.eclipse.neoscada.protocol.iec60870.tls.TlsOptions;
 import org.eclipse.scada.utils.concurrent.NamedThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,6 +42,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.logging.LogLevel;
 import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 
@@ -67,11 +70,23 @@ public class Client implements AutoCloseable {
 
 	private final ConnectionStateListener	listener;
 
+	private final TlsOptions				tls;
+
 	public Client(final SocketAddress address, final ConnectionStateListener listener, final ProtocolOptions options,
 			final List<ClientModule> modules)
 	{
+		this(address, listener, options, modules, null);
+	}
+
+	/**
+	 * A client, over TLS when {@code tls} is given; it then counts as connected once the server is authenticated.
+	 */
+	public Client(final SocketAddress address, final ConnectionStateListener listener, final ProtocolOptions options,
+			final List<ClientModule> modules, final TlsOptions tls)
+	{
 		this.address = address;
 		this.options = options;
+		this.tls = tls;
 
 		this.listener = listener;
 
@@ -132,15 +147,41 @@ public class Client implements AutoCloseable {
 
 		try {
 			future.get();
-			this.channel = future.channel();
-
-			fireConnected(this.channel);
-			result.set(null);
 		}
 		catch (final InterruptedException | ExecutionException e) {
 			fireDisconnected(e);
 			result.setException(e);
+			return;
 		}
+
+		final Channel channel = future.channel();
+		final SslHandler ssl = channel.pipeline().get(SslHandler.class);
+		if (ssl == null) {
+			connected(result, channel);
+			return;
+		}
+		// over TLS, connected means the handshake completed and the server was authenticated
+		ssl.handshakeFuture().addListener(handshake -> {
+			if (handshake.isSuccess()) {
+				connected(result, channel);
+			}
+			else {
+				channel.close();
+				final Exception e = handshake.cause() instanceof Exception ? (Exception)handshake.cause()
+						: new ExecutionException(handshake.cause());
+				fireDisconnected(e);
+				result.setException(e);
+			}
+		});
+	}
+
+	private void connected(final SettableFuture<Void> result, final Channel channel)
+	{
+		synchronized (this) {
+			this.channel = channel;
+		}
+		fireConnected(channel);
+		result.set(null);
 	}
 
 	private void fireConnected(final Channel channel)
@@ -175,6 +216,14 @@ public class Client implements AutoCloseable {
 
 	protected void handleInitChannel(final SocketChannel ch)
 	{
+		if (this.tls != null) {
+			final String host = this.address instanceof InetSocketAddress
+					? ((InetSocketAddress)this.address).getHostString() : null;
+			final int port = this.address instanceof InetSocketAddress ? ((InetSocketAddress)this.address).getPort()
+					: 0;
+			this.tls.install(ch.pipeline(), ch.alloc(), true, host, port);
+		}
+
 		// add the APCI/APDU handler
 		ch.pipeline().addLast(new APDUDecoder());
 		ch.pipeline().addLast(new APDUEncoder());
@@ -199,10 +248,16 @@ public class Client implements AutoCloseable {
 
 		ch.pipeline().addLast(new ChannelDuplexHandler() {
 
+			/** Why the connection was closed, given to the listener with the disconnect. */
+			private Exception reason;
+
 			@Override
 			public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) throws Exception
 			{
 				logger.warn("Close connection due to uncaught exception", cause);
+				if (this.reason == null) {
+					this.reason = cause instanceof Exception ? (Exception)cause : new ExecutionException(cause);
+				}
 				ctx.close();
 			}
 
@@ -210,7 +265,7 @@ public class Client implements AutoCloseable {
 			public void channelInactive(final ChannelHandlerContext ctx) throws Exception
 			{
 				super.channelInactive(ctx);
-				fireDisconnected(null);
+				fireDisconnected(this.reason);
 			}
 		});
 	}

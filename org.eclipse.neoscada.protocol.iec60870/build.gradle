@@ -7,4 +7,5 @@ dependencies {
     api group: 'io.netty', name: 'netty-codec', version: rootProject.nettyVersion
     api group: 'io.netty', name: 'netty-buffer', version: rootProject.nettyVersion
     api group: 'io.netty', name: 'netty-common', version: rootProject.nettyVersion
+    api group: 'io.netty', name: 'netty-handler', version: rootProject.nettyVersion
 }
