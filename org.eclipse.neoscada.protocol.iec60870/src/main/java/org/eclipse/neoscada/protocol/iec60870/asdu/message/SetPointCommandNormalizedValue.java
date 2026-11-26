@@ -44,8 +44,8 @@ public class SetPointCommandNormalizedValue extends AbstractSetPointCommandNorma
 
 		final byte b = data.readByte();
 
-		final byte type = (byte)(b & 0b011111111);
-		final boolean execute = !((b & 0b100000000) > 0);
+		final byte type = (byte)(b & 0b01111111);
+		final boolean execute = !((b & 0b10000000) > 0);
 
 		return new SetPointCommandNormalizedValue(header, address, value / 32768.0, type, execute);
 	}

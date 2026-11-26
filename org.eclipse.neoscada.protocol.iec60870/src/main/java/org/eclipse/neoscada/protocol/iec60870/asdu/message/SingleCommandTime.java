@@ -41,8 +41,8 @@ public class SingleCommandTime extends AbstractSingleCommand implements ValueCom
 		final byte b = data.readByte();
 
 		final boolean state = (b & 0b00000001) > 0;
-		final byte type = (byte)((b & 0b011111100) >> 2);
-		final boolean execute = !((b & 0b100000000) > 0);
+		final byte type = (byte)((b & 0b01111100) >> 2);
+		final boolean execute = !((b & 0b10000000) > 0);
 
 		final long timestamp = TypeHelper.parseTimestamp(options, data);
 

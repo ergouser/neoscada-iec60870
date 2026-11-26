@@ -29,7 +29,7 @@ public class CauseOfTransmission {
 
 	private static final int				CAUSE_MASK	= 0b00111111;
 
-	private static final int				ACK_BIT		= 0b0100000000;
+	private static final int				ACK_BIT		= 0b01000000;
 
 	private static final int				TEST_BIT	= 0b10000000;
 

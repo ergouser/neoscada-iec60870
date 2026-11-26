@@ -129,7 +129,41 @@ class AsduCodecTest {
 					assertTrue(m.isExecute());
 				}),
 				frame("C_SC_NA_1 select", "2D 01 " + ACT + CA + IOA + "81", SingleCommand.class,
-						(final SingleCommand m) -> assertTrue(!m.isExecute())),
+						(final SingleCommand m) -> {
+							assertTrue(!m.isExecute());
+							assertEquals(0, m.getType());
+						}),
+				frame("C_SC_NA_1 select, short pulse", "2D 01 " + ACT + CA + IOA + "85", SingleCommand.class,
+						(final SingleCommand m) -> {
+							assertTrue(!m.isExecute());
+							assertEquals(1, m.getType());
+						}),
+				frame("C_SC_NA_1 negative confirmation", "2D 01 47 00 " + CA + IOA + "01", SingleCommand.class,
+						(final SingleCommand m) -> {
+							assertEquals(StandardCause.ACTIVATION_CONFIRM,
+									m.getHeader().getCauseOfTransmission().getCause());
+							assertTrue(!m.getHeader().getCauseOfTransmission().isPositive());
+						}),
+				frame("C_DC_NA_1 select, long pulse", "2E 01 " + ACT + CA + IOA + "8A", DoubleCommand.class,
+						(final DoubleCommand m) -> {
+							assertTrue(!m.isExecute());
+							assertEquals(2, m.getType());
+						}),
+				frame("C_SE_NC_1 select", "32 01 " + ACT + CA + IOA + "00 00 C0 3F 80",
+						SetPointCommandShortFloatingPoint.class, (final SetPointCommandShortFloatingPoint m) -> {
+							assertTrue(!m.isExecute());
+							assertEquals(0, m.getType());
+						}),
+				frame("C_SE_NB_1 qualifier 5", "31 01 " + ACT + CA + IOA + "D2 04 05", SetPointCommandScaledValue.class,
+						(final SetPointCommandScaledValue m) -> {
+							assertTrue(m.isExecute());
+							assertEquals(5, m.getType());
+						}),
+				frame("M_SP_NA_1 test", "01 01 83 00 " + CA + IOA + "01", SinglePointInformationSingle.class,
+						(final SinglePointInformationSingle m) -> {
+							assertTrue(m.getHeader().getCauseOfTransmission().isTest());
+							assertTrue(m.getHeader().getCauseOfTransmission().isPositive());
+						}),
 				frame("C_DC_NA_1", "2E 01 " + ACT + CA + IOA + "02", DoubleCommand.class, null),
 				frame("C_SE_NA_1", "30 01 " + ACT + CA + IOA + "00 40 00", SetPointCommandNormalizedValue.class, null),
 				frame("C_SE_NB_1", "31 01 " + ACT + CA + IOA + "D2 04 00", SetPointCommandScaledValue.class, null),

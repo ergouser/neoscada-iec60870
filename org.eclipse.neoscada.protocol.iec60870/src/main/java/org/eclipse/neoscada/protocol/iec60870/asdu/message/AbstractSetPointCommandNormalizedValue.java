@@ -58,8 +58,8 @@ public abstract class AbstractSetPointCommandNormalizedValue extends AbstractInf
 
 		byte b = 0;
 
-		b |= this.type & 0b011111111;
-		b |= this.execute ? 0 : 0b100000000;
+		b |= this.type & 0b01111111;
+		b |= this.execute ? 0 : 0b10000000;
 
 		out.writeByte(b);
 

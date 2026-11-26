@@ -60,8 +60,8 @@ public abstract class AbstractSingleCommand extends AbstractInformationObjectMes
 		byte b = 0;
 
 		b |= this.isState() ? 0b00000001 : 0;
-		b |= this.type << 2 & 0b011111100;
-		b |= this.execute ? 0 : 0b100000000;
+		b |= this.type << 2 & 0b01111100;
+		b |= this.execute ? 0 : 0b10000000;
 
 		this.informationObjectAddress.encode(options, out);
 
