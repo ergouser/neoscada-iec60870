@@ -12,6 +12,7 @@
  *******************************************************************************/
 package org.eclipse.neoscada.protocol.iec60870.client.data;
 
+import java.util.List;
 import java.util.concurrent.Executor;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
@@ -33,18 +34,30 @@ public class DataProcessor extends AbstractDataProcessor {
 
 	private Runnable			interrogationRunner;
 
+	private final List<ASDUAddress>	interrogated;
+
 	public DataProcessor(final Executor executor, final DataListener listener)
 	{
-		this.executor = executor;
-		this.listener = listener;
-		this.delayStart = false;
+		this(executor, listener, false);
 	}
 
 	public DataProcessor(final Executor executor, final DataListener dataListener, final boolean delayStart)
 	{
+		this(executor, dataListener, delayStart, List.of(ASDUAddress.BROADCAST));
+	}
+
+	/**
+	 * @param interrogated
+	 *            the common addresses given a station interrogation once data transfer starts; the broadcast address
+	 *            unless told otherwise, which not every station answers
+	 */
+	public DataProcessor(final Executor executor, final DataListener dataListener, final boolean delayStart,
+			final List<ASDUAddress> interrogated)
+	{
 		this.executor = executor;
 		this.listener = dataListener;
 		this.delayStart = delayStart;
+		this.interrogated = List.copyOf(interrogated);
 	}
 
 	@Override
@@ -64,7 +77,9 @@ public class DataProcessor extends AbstractDataProcessor {
 			@Override
 			public void run()
 			{
-				dataModuleContext.startInterrogation(ASDUAddress.BROADCAST, QualifierOfInterrogation.GLOBAL);
+				for (final ASDUAddress address : DataProcessor.this.interrogated) {
+					dataModuleContext.startInterrogation(address, QualifierOfInterrogation.GLOBAL);
+				}
 			}
 		};
 		if (!delayStart) {
