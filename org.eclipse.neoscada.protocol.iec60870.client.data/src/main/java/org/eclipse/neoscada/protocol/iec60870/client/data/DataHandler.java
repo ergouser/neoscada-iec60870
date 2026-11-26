@@ -58,4 +58,16 @@ public interface DataHandler {
 	public void process(BitstringSingle msg);
 
 	public void process(BitstringTimeSingle msg);
+
+	public default void process(final IntegratedTotalsSequence msg)
+	{
+	}
+
+	public default void process(final IntegratedTotalsSingle msg)
+	{
+	}
+
+	public default void process(final IntegratedTotalsTimeSingle msg)
+	{
+	}
 }

@@ -116,6 +116,24 @@ public interface DataModel {
 		forAllAsdu((Consumer<ASDUAddress>)function::apply, ifNoneFound);
 	}
 
+	/**
+	 * Act on a counter interrogation (C_CI_NA_1) <br/>
+	 * With {@code freeze} zero the counters of the request are pushed to the listener with {@code cause} (37 for all
+	 * counters, 38 to 41 for a group), as {@link #readAll} pushes values; otherwise they are frozen, frozen and reset,
+	 * or reset, and may be pushed or not as the station's counters work. The same rules apply as for
+	 * {@link #readAll}.
+	 *
+	 * @param freeze
+	 *            the FRZ part of the qualifier: 0 read, 1 freeze, 2 freeze and reset, 3 reset
+	 * @return the future which indicates the end of the transmission, or <code>null</code> if the station has no
+	 *         counters at this address, which is also the default
+	 */
+	public default ListenableFuture<Void> readCounters(final CauseOfTransmission cause, final ASDUAddress asduAddress,
+			final int freeze, final Runnable prepare, final DataListener listener)
+	{
+		return null;
+	}
+
 	public void writeValue(ASDUHeader header, InformationObjectAddress informationObjectAddress, CommandValue<?> value,
 			byte type, MirrorCommand mirrorCommand, boolean execute);
 

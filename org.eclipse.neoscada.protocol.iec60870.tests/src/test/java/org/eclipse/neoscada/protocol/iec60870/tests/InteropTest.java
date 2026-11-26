@@ -9,6 +9,7 @@ package org.eclipse.neoscada.protocol.iec60870.tests;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.BufferedReader;
@@ -27,9 +28,11 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.ASDUHeader;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.AbstractMessage;
+import org.eclipse.neoscada.protocol.iec60870.asdu.message.CounterInterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.SetPointCommandShortFloatingPoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.SingleCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CauseOfTransmission;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationObjectAddress;
@@ -119,6 +122,14 @@ class InteropTest extends Fixture {
 		c.client.writeCommand(new SingleCommand(header(), InformationObjectAddress.valueOf(1), false, (byte)0,
 				true));
 		await().atMost(WAIT).until(() -> Boolean.FALSE.equals(c.values.get(1).getValue()));
+
+		// counters come only for a counter interrogation, not with the station interrogation
+		assertFalse(c.values.containsKey(9));
+		c.client.writeCommand(new CounterInterrogationCommand(header(), CounterInterrogationCommand.qualifier(
+				CounterInterrogationCommand.REQUEST_GENERAL, CounterInterrogationCommand.FREEZE_READ)));
+		await().atMost(WAIT).until(() -> c.values.containsKey(9) && c.values.containsKey(10));
+		assertEquals(new BinaryCounterReading(123_456, 3, true, false), c.values.get(9).getValue());
+		assertEquals(new BinaryCounterReading(-7, 0, false, false), c.values.get(10).getValue());
 	}
 
 	// ------------------------------------------------------------------- the simulator as master
@@ -152,6 +163,8 @@ class InteropTest extends Fixture {
 		assertTrue(lines.contains("POINT 101 M_ME_NC_1 -230.25"), () -> String.join("\n", lines));
 		assertTrue(lines.contains("POINT 200 M_SP_NA_1 true"), () -> String.join("\n", lines));
 		assertTrue(lines.contains("POINT 201 M_SP_NA_1 false"), () -> String.join("\n", lines));
+		assertTrue(lines.contains("POINT 300 M_IT_TB_1 1000 sq=0 cy=false"), () -> String.join("\n", lines));
+		assertTrue(lines.contains("POINT 301 M_IT_TB_1 -5 sq=0 cy=false"), () -> String.join("\n", lines));
 		assertTrue(lines.contains("DONE"), () -> String.join("\n", lines));
 		assertEquals(List.of(new TestStation.Command(102, 7.25f, (byte)0, true),
 				new TestStation.Command(200, false, (byte)0, false), new TestStation.Command(200, false, (byte)0, true)),

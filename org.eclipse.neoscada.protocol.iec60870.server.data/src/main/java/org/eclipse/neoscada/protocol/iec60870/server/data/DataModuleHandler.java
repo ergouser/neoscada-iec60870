@@ -14,13 +14,19 @@ package org.eclipse.neoscada.protocol.iec60870.server.data;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.function.Supplier;
 
 import org.eclipse.neoscada.protocol.iec60870.apci.MessageChannel;
 import org.eclipse.neoscada.protocol.iec60870.asdu.ASDUHeader;
+import org.eclipse.neoscada.protocol.iec60870.asdu.message.AbstractMessage;
+import org.eclipse.neoscada.protocol.iec60870.asdu.message.CounterInterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.DataTransmissionMessage;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.InterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.ReadCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.ValueCommandMessage;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.Cause;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationObjectAddress;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.StandardCause;
@@ -115,7 +121,18 @@ public class DataModuleHandler extends AbstractModuleHandler {
 				handleReadCommand(ctx, (ReadCommand)msg);
 			}
 			else if (msg instanceof InterrogationCommand) {
-				handleInterrogationCommand(ctx, (InterrogationCommand)msg);
+				final InterrogationCommand command = (InterrogationCommand)msg;
+				if (isActivation(command, () -> command.mirror(StandardCause.DEACTIVATION_CONFIRM, false),
+						() -> command.mirror(StandardCause.UNKNOWN_REASON, false))) {
+					handleInterrogationCommand(ctx, command);
+				}
+			}
+			else if (msg instanceof CounterInterrogationCommand) {
+				final CounterInterrogationCommand command = (CounterInterrogationCommand)msg;
+				if (isActivation(command, () -> command.mirror(StandardCause.DEACTIVATION_CONFIRM, false),
+						() -> command.mirror(StandardCause.UNKNOWN_REASON, false))) {
+					this.source.startCounterInterrogation(command);
+				}
 			}
 			else if (msg instanceof ValueCommandMessage) {
 				handleWriteValue(ctx, (ValueCommandMessage)msg);
@@ -129,6 +146,21 @@ public class DataModuleHandler extends AbstractModuleHandler {
 			logger.warn("Failed to process message", e);
 			throw new InvocationTargetException(e);
 		}
+	}
+
+	/**
+	 * An interrogation is started only by an activation. A deactivation is confirmed negatively, since a running
+	 * interrogation is not stopped; any other cause is refused as unknown (45).
+	 */
+	private boolean isActivation(final AbstractMessage msg, final Supplier<Object> deactivated,
+			final Supplier<Object> unknown)
+	{
+		final Cause cause = msg.getHeader().getCauseOfTransmission().getCause();
+		if (cause == StandardCause.ACTIVATED) {
+			return true;
+		}
+		this.ctx.writeAndFlush(cause == StandardCause.DEACTIVATED ? deactivated.get() : unknown.get());
+		return false;
 	}
 
 	private void handleWriteValue(final ChannelHandlerContext ctx, final ValueCommandMessage msg)
@@ -275,6 +307,25 @@ public class DataModuleHandler extends AbstractModuleHandler {
 		else if (value instanceof Float) {
 			InformationEntry<Float> entry = new InformationEntry<>(address, (Value<Float>)result);
 			this.source.sendMeasuredValueShortFloatingPointValues(header, List.of(entry), false);
+		}
+		else if (value instanceof DoublePoint) {
+			this.source.sendDoublePointValues(header, List.of(new InformationEntry<>(address, (Value<DoublePoint>)result)),
+					false);
+		}
+		else if (value instanceof Short) {
+			this.source.sendMeasuredValueScaledValues(header, List.of(new InformationEntry<>(address, (Value<Short>)result)),
+					false);
+		}
+		else if (value instanceof Double) {
+			this.source.sendMeasuredValueNormalizedValues(header,
+					List.of(new InformationEntry<>(address, (Value<Double>)result)), false);
+		}
+		else if (value instanceof Long) {
+			this.source.sendBitstringValues(header, List.of(new InformationEntry<>(address, (Value<Long>)result)), false);
+		}
+		else if (value instanceof BinaryCounterReading) {
+			this.source.sendIntegratedTotals(header,
+					List.of(new InformationEntry<>(address, (Value<BinaryCounterReading>)result)), false);
 		}
 		else {
 			handleReadFailure(originalHeader, address, null);

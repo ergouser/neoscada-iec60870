@@ -71,6 +71,16 @@ public class DataModuleHandler extends AbstractModuleHandler implements DataModu
 	}
 
 	@Override
+	public void startCounterInterrogation(final ASDUAddress address, final byte qualifier)
+	{
+		final ChannelHandlerContext ctx = this.ctx;
+		if (ctx == null) {
+			return;
+		}
+		ctx.writeAndFlush(new CounterInterrogationCommand(makeHeader(StandardCause.ACTIVATED, address), qualifier));
+	}
+
+	@Override
 	public void requestStartData()
 	{
 		final ChannelHandlerContext ctx = this.ctx;
@@ -147,6 +157,15 @@ public class DataModuleHandler extends AbstractModuleHandler implements DataModu
 		}
 		else if (msg instanceof BitstringTimeSingle) {
 			handleDataMessage((BitstringTimeSingle)msg);
+		}
+		else if (msg instanceof IntegratedTotalsSequence) {
+			this.dataHandler.process((IntegratedTotalsSequence)msg);
+		}
+		else if (msg instanceof IntegratedTotalsSingle) {
+			this.dataHandler.process((IntegratedTotalsSingle)msg);
+		}
+		else if (msg instanceof IntegratedTotalsTimeSingle) {
+			this.dataHandler.process((IntegratedTotalsTimeSingle)msg);
 		}
 		else {
 			super.channelRead(ctx, msg);

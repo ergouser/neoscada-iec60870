@@ -16,6 +16,7 @@ import java.util.List;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.ASDUHeader;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CauseOfTransmission;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
@@ -70,5 +71,12 @@ public class DataListenerImpl implements DataListener {
 			final List<InformationEntry<Long>> values, boolean withTimestamps)
 	{
 		this.source.sendBitstringValues(new ASDUHeader(cause, asduAddress), values, withTimestamps);
+	}
+
+	@Override
+	public void dataChangeIntegratedTotals(final CauseOfTransmission cause, final ASDUAddress asduAddress,
+			final List<InformationEntry<BinaryCounterReading>> values, final boolean withTimestamps)
+	{
+		this.source.sendIntegratedTotals(new ASDUHeader(cause, asduAddress), values, withTimestamps);
 	}
 }

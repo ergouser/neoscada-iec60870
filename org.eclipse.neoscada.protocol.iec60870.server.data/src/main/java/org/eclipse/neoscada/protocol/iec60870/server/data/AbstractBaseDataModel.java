@@ -20,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CauseOfTransmission;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
@@ -119,6 +120,15 @@ public abstract class AbstractBaseDataModel implements DataModel {
 	{
 		for (final DefaultSubscription sub : this.subscriptions) {
 			this.executor.execute(() -> sub.notifyChangeBitstring(cause, asduAddress, values, withTimestamps));
+		}
+	}
+
+	protected synchronized void notifyChangeIntegratedTotals(final CauseOfTransmission cause,
+			final ASDUAddress asduAddress, final List<InformationEntry<BinaryCounterReading>> values,
+			final boolean withTimestamps)
+	{
+		for (final DefaultSubscription sub : this.subscriptions) {
+			this.executor.execute(() -> sub.notifyChangeIntegratedTotals(cause, asduAddress, values, withTimestamps));
 		}
 	}
 

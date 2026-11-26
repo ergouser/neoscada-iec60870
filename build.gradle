@@ -11,7 +11,7 @@ ext {
 }
 
 // The version published, and the one JitPack builds from a tag of the same name.
-def releaseVersion = '14.1.0'
+def releaseVersion = '14.2.0'
 
 subprojects { subProject ->
 

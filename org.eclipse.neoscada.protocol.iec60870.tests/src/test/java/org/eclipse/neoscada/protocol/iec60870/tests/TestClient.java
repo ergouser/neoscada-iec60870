@@ -27,6 +27,7 @@ import org.eclipse.neoscada.protocol.iec60870.client.Client;
 import org.eclipse.neoscada.protocol.iec60870.client.ClientModule;
 import org.eclipse.neoscada.protocol.iec60870.client.data.DataListener;
 import org.eclipse.neoscada.protocol.iec60870.client.data.DataModule;
+import org.eclipse.neoscada.protocol.iec60870.client.data.DataModuleHandler;
 import org.eclipse.neoscada.protocol.iec60870.client.data.DataModuleOptions;
 import org.eclipse.neoscada.protocol.iec60870.client.data.DataProcessor;
 import org.eclipse.neoscada.protocol.iec60870.tls.TlsOptions;
@@ -45,6 +46,9 @@ final class TestClient implements AutoCloseable {
 	final Map<Integer, Value<?>> values = new ConcurrentHashMap<>();
 
 	final List<Object> messages = new CopyOnWriteArrayList<>();
+
+	/** Every message as it arrives, data included, in order. */
+	final List<Object> received = new CopyOnWriteArrayList<>();
 
 	final List<AutoConnectClient.State> states = new CopyOnWriteArrayList<>();
 
@@ -115,6 +119,16 @@ final class TestClient implements AutoCloseable {
 		@Override
 		public void initializeChannel(final SocketChannel channel, final MessageChannel messageChannel)
 		{
+			final String data = channel.pipeline().context(DataModuleHandler.class).name();
+			channel.pipeline().addBefore(data, "received", new ChannelInboundHandlerAdapter() {
+
+				@Override
+				public void channelRead(final ChannelHandlerContext ctx, final Object msg)
+				{
+					TestClient.this.received.add(msg);
+					ctx.fireChannelRead(msg);
+				}
+			});
 			channel.pipeline().addLast(new ChannelInboundHandlerAdapter() {
 
 				@Override

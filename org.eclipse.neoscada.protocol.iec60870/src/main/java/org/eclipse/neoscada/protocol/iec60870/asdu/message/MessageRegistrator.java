@@ -54,6 +54,11 @@ public class MessageRegistrator {
 		manager.registerClass(BitstringSingle.class);
 		manager.registerClass(BitstringTimeSingle.class);
 
+		manager.registerClass(IntegratedTotalsSequence.class);
+		manager.registerClass(IntegratedTotalsSingle.class);
+		manager.registerClass(IntegratedTotalsTimeSingle.class);
+		manager.registerClass(CounterInterrogationCommand.class);
+
 		manager.registerClass(EndOfInitialization.class);
 	}
 }

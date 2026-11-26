@@ -17,4 +17,15 @@ public interface DataModuleContext {
 	public void requestStartData();
 
 	public void startInterrogation(ASDUAddress address, short qualifierOfInterrogation);
+
+	/**
+	 * Sends a counter interrogation (C_CI_NA_1)
+	 *
+	 * @param qualifier
+	 *            the QCC, see {@code CounterInterrogationCommand.qualifier}
+	 */
+	public default void startCounterInterrogation(final ASDUAddress address, final byte qualifier)
+	{
+		throw new UnsupportedOperationException();
+	}
 }

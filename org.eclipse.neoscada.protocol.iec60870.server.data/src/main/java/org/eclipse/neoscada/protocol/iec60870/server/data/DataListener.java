@@ -15,6 +15,7 @@ package org.eclipse.neoscada.protocol.iec60870.server.data;
 import java.util.List;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CauseOfTransmission;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
@@ -38,4 +39,10 @@ public interface DataListener {
 
 	public void dataChangeBitstring(CauseOfTransmission cause, ASDUAddress asduAddress,
 			List<InformationEntry<Long>> values, boolean withTimestamps);
+
+	/** Counter readings: integrated totals, M_IT. */
+	public default void dataChangeIntegratedTotals(final CauseOfTransmission cause, final ASDUAddress asduAddress,
+			final List<InformationEntry<BinaryCounterReading>> values, final boolean withTimestamps)
+	{
+	}
 }

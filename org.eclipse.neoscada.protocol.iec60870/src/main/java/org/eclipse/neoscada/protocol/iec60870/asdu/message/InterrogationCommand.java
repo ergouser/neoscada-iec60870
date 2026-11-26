@@ -62,4 +62,10 @@ public class InterrogationCommand extends AbstractInformationObjectMessage {
 	{
 		return new InterrogationCommand(this.header.clone(cause), this.qualifierOfInterrogation);
 	}
+
+	public InterrogationCommand mirror(final Cause cause, final boolean positive)
+	{
+		return new InterrogationCommand(this.header.clone(cause, positive), this.informationObjectAddress,
+				this.qualifierOfInterrogation);
+	}
 }

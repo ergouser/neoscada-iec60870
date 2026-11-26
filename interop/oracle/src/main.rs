@@ -51,7 +51,7 @@ fn value_text(value: &DataPointValue) -> String {
         DataPointValue::Normalized { value } => value.to_string(),
         DataPointValue::Scaled { value } => value.to_string(),
         DataPointValue::ShortFloat { value } => value.to_string(),
-        DataPointValue::IntegratedTotal { value, .. } => value.to_string(),
+        DataPointValue::IntegratedTotal { value, carry, sequence } => format!("{} sq={} cy={}", value, sequence, carry),
     }
 }
 
@@ -67,6 +67,9 @@ fn station() -> Station {
         (6, AsduTypeId::MBoNa1, DataPointValue::Bitstring { value: 0x1234_5678 }),
         (7, AsduTypeId::MSpTb1, DataPointValue::SinglePoint { value: false }),
         (8, AsduTypeId::MMeTf1, DataPointValue::ShortFloat { value: -40.25 }),
+        // counters, sent only for a counter interrogation
+        (9, AsduTypeId::MItNa1, DataPointValue::IntegratedTotal { value: 123_456, carry: true, sequence: 3 }),
+        (10, AsduTypeId::MItNa1, DataPointValue::IntegratedTotal { value: -7, carry: false, sequence: 0 }),
     ];
     for (ioa, asdu_type, value) in points {
         station
@@ -133,6 +136,9 @@ async fn master(args: &[String]) {
     sleep(Duration::from_millis(500)).await;
     master.send_interrogation(1).await.unwrap();
     sleep(Duration::from_millis(2000)).await;
+    // counter interrogation, all counters, read (QCC 5)
+    master.send_counter_read(1).await.unwrap();
+    sleep(Duration::from_millis(1000)).await;
     {
         let data = master.received_data.read().await;
         if let Some(map) = data.ca_map(1) {

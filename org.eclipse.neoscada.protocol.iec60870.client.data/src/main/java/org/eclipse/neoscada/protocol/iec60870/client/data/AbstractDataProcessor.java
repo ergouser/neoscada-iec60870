@@ -14,6 +14,7 @@ package org.eclipse.neoscada.protocol.iec60870.client.data;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.*;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.DoublePoint;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationObjectAddress;
@@ -251,6 +252,41 @@ public abstract class AbstractDataProcessor implements DataHandler {
 		}
 
 		for (final InformationEntry<Long> entry : msg.getEntries()) {
+			fireEntry(msg.getHeader().getAsduAddress(), entry.getAddress(), entry.getValue());
+		}
+	}
+
+	@Override
+	public void process(final IntegratedTotalsSequence msg)
+	{
+		if (checkIgnore(msg)) {
+			return;
+		}
+		int i = msg.getStartAddress().getAddress();
+		for (final Value<BinaryCounterReading> value : msg.getValues()) {
+			fireEntry(msg.getHeader().getAsduAddress(), InformationObjectAddress.valueOf(i), value);
+			i++;
+		}
+	}
+
+	@Override
+	public void process(final IntegratedTotalsSingle msg)
+	{
+		processTotals(msg);
+	}
+
+	@Override
+	public void process(final IntegratedTotalsTimeSingle msg)
+	{
+		processTotals(msg);
+	}
+
+	private void processTotals(final AbstractIntegratedTotals msg)
+	{
+		if (checkIgnore(msg)) {
+			return;
+		}
+		for (final InformationEntry<BinaryCounterReading> entry : msg.getEntries()) {
 			fireEntry(msg.getHeader().getAsduAddress(), entry.getAddress(), entry.getValue());
 		}
 	}

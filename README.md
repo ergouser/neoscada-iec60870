@@ -18,13 +18,13 @@ From [JitPack](https://jitpack.io/#ergouser/neoscada-iec60870), with the tag as 
 repositories { maven { url = 'https://jitpack.io' } }
 
 dependencies {
-    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.client.data:14.1.0'
-    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.server.data:14.1.0'
+    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.client.data:14.2.0'
+    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.server.data:14.2.0'
 }
 ```
 
 The classes run on Java 21 and later. `./gradlew publishToMavenLocal` installs them locally instead, as
-`org.syncrontech.neoscada.protocols:<module>:14.1.0`.
+`org.syncrontech.neoscada.protocols:<module>:14.2.0`.
 
 | Module | What it is |
 |---|---|
@@ -36,6 +36,25 @@ The classes run on Java 21 and later. `./gradlew publishToMavenLocal` installs t
 | `org.syncrontech.neoscada.protocol.iec60870.server.system` | clock synchronisation and test commands for the server |
 | `org.eclipse.scada.utils` | NeoSCADA's utilities the above need |
 | `...client.data.testing`, `...server.testing` | small example programs |
+
+### Counters (integrated totals)
+
+Energy and other counters travel as integrated totals: M_IT_NA_1 (single entries or a sequence) and M_IT_TB_1
+(with a CP56Time2a time tag), each a `BinaryCounterReading` of a signed 32-bit count, its sequence number and its
+carry and adjusted flags; the invalid flag is the reading's `QualityInformation`. A client reads them with a
+counter interrogation:
+
+```java
+client.writeCommand(new CounterInterrogationCommand(header,
+        CounterInterrogationCommand.qualifier(CounterInterrogationCommand.REQUEST_GENERAL,
+                CounterInterrogationCommand.FREEZE_READ)));
+```
+
+and they arrive through `DataListener.update` like any other value. A server's `DataModel` answers by
+implementing `readCounters`, which is given the cause (37 for all counters, 38 to 41 for a group) and the freeze
+part of the qualifier, and pushes readings through `DataListener.dataChangeIntegratedTotals`; the module confirms,
+sends what it pushes and terminates, as for a station interrogation. A model that does not implement it refuses
+counter interrogation with cause 46. Spontaneous readings go out the same way with cause 3.
 
 ### TLS (IEC 62351-3)
 
@@ -70,6 +89,12 @@ Since Syncron Tech's 14.0.0:
   went out after w-1 frames instead of w; a frame too short for its control fields is refused.
 - **TLS** as above, through new constructors of `Client`, `AutoConnectClient` and `Server`; the old ones are
   unchanged.
+- **Integrated totals and counter interrogation** (M_IT_NA_1, M_IT_TB_1, C_CI_NA_1) in both roles, as above.
+- **Interrogation**: groups 10 to 16 were not recognised as interrogation causes, so the termination went out
+  before data still waiting for the send window; an interrogation or counter interrogation with a cause other than
+  activation was started as if activated, and now a deactivation is confirmed negatively (nothing is stopped) and
+  any other cause is refused with cause 45.
+- A read command (C_RD) is answered for every value type, not only single points and floats.
 - `DataProcessor` can interrogate named common addresses instead of the broadcast address, which not every station
   answers.
 - `Server` binds in its constructor, so a port in use fails there, and reports the port it bound.
@@ -84,19 +109,20 @@ Testing
 - every registered ASDU type decoded from bytes laid out by hand from the standard, and encoded back;
 - the link layer's framing, k and w windows and t1/t2/t3 timers, on a clock the test moves;
 - a client and a server of this stack exchanging interrogation, spontaneous data, set points and select/execute,
+  counter interrogation with reads, freezes and resets, group requests and refusals,
   in plain TCP and over TLS 1.2 and 1.3, with refusals of missing or untrusted certificates, wrong server names and
   weak suites, and key renewal under traffic.
 
 `./gradlew interop` (needs Docker) runs it against an independent implementation, the core of
 [IEC60870-5-104-Simulator](https://github.com/Karl-Dai/IEC60870-5-104-Simulator) (MIT), pinned to one commit and
 built from `interop/`: the simulator as slave read and commanded by this client, and as master reading and
-commanding this server, in plain TCP and over TLS 1.2 and 1.3.
+commanding this server, counters included, in plain TCP and over TLS 1.2 and 1.3.
 
 Not yet supported
 -----------------
 
-Integrated totals (M_IT, counter interrogation C_CI), step positions (M_ST, C_RC), protection events (M_EP),
-bitstring commands (C_BO), parameter loading (P_ME), file transfer, and normalized values without quality (M_ME_ND).
+Step positions (M_ST, C_RC), protection events (M_EP),
+bitstring commands (C_BO), bitstrings as a sequence (M_BO_NA_1 with SQ=1), parameter loading (P_ME), file transfer, and normalized values without quality (M_ME_ND).
 A received ASDU of a type not registered is answered with cause 44, unknown type.
 
 History

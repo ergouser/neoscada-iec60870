@@ -15,11 +15,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 import org.eclipse.neoscada.protocol.iec60870.asdu.ASDUHeader;
+import org.eclipse.neoscada.protocol.iec60870.asdu.message.CounterInterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.ASDUAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.BinaryCounterReading;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CauseOfTransmission;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.CommandValue;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationEntry;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.InformationObjectAddress;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.QualityInformation;
+import org.eclipse.neoscada.protocol.iec60870.asdu.types.StandardCause;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.Value;
 import org.eclipse.neoscada.protocol.iec60870.io.MirrorCommand;
 import org.eclipse.neoscada.protocol.iec60870.server.data.AbstractBaseDataModel;
@@ -44,6 +48,19 @@ final class TestStation extends AbstractBaseDataModel {
 	private final Map<Integer, Float> floats = new TreeMap<>();
 
 	private final Map<Integer, Boolean> singles = new TreeMap<>();
+
+	/** Counters, each with its group: 300 in group 1, 301 in group 2. */
+	private final Map<Integer, Integer> counters = new TreeMap<>(Map.of(300, 1000, 301, -5));
+
+	private final Map<Integer, Integer> groups = Map.of(300, 1, 301, 2);
+
+	/** The values at the last freeze, which a read returns. */
+	private final Map<Integer, Integer> frozen = new TreeMap<>(this.counters);
+
+	private int sequence;
+
+	/** The time of the last freeze, the time tag of a frozen reading. */
+	private long frozenAt = System.currentTimeMillis();
 
 	final List<Command> commands = new CopyOnWriteArrayList<>();
 
@@ -100,6 +117,65 @@ final class TestStation extends AbstractBaseDataModel {
 			}
 			listener.dataChangeShortFloatingPoint(cause, ADDRESS, f, false);
 			listener.dataChangeSinglePoint(cause, ADDRESS, b, false);
+			return null;
+		});
+	}
+
+	/** Adds {@code n} measured values at every other address from 1000, more than one window of frames holds. */
+	synchronized void addFloats(final int n)
+	{
+		for (int i = 0; i < n; i++) {
+			this.floats.put(1000 + 2 * i, (float)i);
+		}
+	}
+
+	synchronized void count(final int ioa, final int increment)
+	{
+		this.counters.merge(ioa, increment, Integer::sum);
+	}
+
+	/**
+	 * Counters in the way most meters keep them (mode D of IEC 60870-5-101 7.4.8): a freeze copies them, a read
+	 * returns the copy, time tagged with the freeze.
+	 */
+	@Override
+	public ListenableFuture<Void> readCounters(final CauseOfTransmission cause, final ASDUAddress asduAddress,
+			final int freeze, final Runnable prepare, final DataListener listener)
+	{
+		if (!ADDRESS.equals(asduAddress)) {
+			return null;
+		}
+		final int group = cause.getCause().getValue() - StandardCause.COUNTER_GENERAL.getValue();
+		return this.executor.submit(() -> {
+			prepare.run();
+			final List<InformationEntry<BinaryCounterReading>> readings = new ArrayList<>();
+			synchronized (this) {
+				for (final Map.Entry<Integer, Integer> e : this.counters.entrySet()) {
+					if (group != 0 && this.groups.get(e.getKey()) != group) {
+						continue;
+					}
+					switch (freeze) {
+						case CounterInterrogationCommand.FREEZE_READ -> readings.add(new InformationEntry<>(
+								InformationObjectAddress.valueOf(e.getKey()), new Value<>(new BinaryCounterReading(
+										this.frozen.get(e.getKey()), this.sequence, false, false), this.frozenAt,
+										QualityInformation.OK)));
+						case CounterInterrogationCommand.FREEZE_NO_RESET -> this.frozen.put(e.getKey(), e.getValue());
+						case CounterInterrogationCommand.FREEZE_WITH_RESET -> {
+							this.frozen.put(e.getKey(), e.getValue());
+							e.setValue(0);
+						}
+						default -> e.setValue(0);
+					}
+				}
+				if (freeze == CounterInterrogationCommand.FREEZE_NO_RESET
+						|| freeze == CounterInterrogationCommand.FREEZE_WITH_RESET) {
+					this.sequence = (this.sequence + 1) % 32;
+					this.frozenAt = System.currentTimeMillis();
+				}
+			}
+			if (!readings.isEmpty()) {
+				listener.dataChangeIntegratedTotals(cause, ADDRESS, readings, true);
+			}
 			return null;
 		});
 	}

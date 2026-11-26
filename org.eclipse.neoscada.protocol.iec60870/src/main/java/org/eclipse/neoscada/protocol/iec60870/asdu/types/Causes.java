@@ -42,7 +42,14 @@ public final class Causes {
 	public static boolean isInterrogation(final Cause cause)
 	{
 		final short value = cause.getValue();
-		return value >= StandardCause.STATION_REQUEST.getValue() && value <= StandardCause.GROUP_REQUEST_9.getValue();
+		return value >= StandardCause.STATION_REQUEST.getValue() && value <= StandardCause.GROUP_REQUEST_16.getValue();
+	}
+
+	/** A reply to a counter interrogation: all counters (37) or a group (38 to 41). */
+	public static boolean isCounterInterrogation(final Cause cause)
+	{
+		final short value = cause.getValue();
+		return value >= StandardCause.COUNTER_GENERAL.getValue() && value <= StandardCause.COUNTER_GROUP_4.getValue();
 	}
 
 }

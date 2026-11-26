@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.neoscada.protocol.iec60870.apci.MessageSource;
 import org.eclipse.neoscada.protocol.iec60870.asdu.ASDUHeader;
+import org.eclipse.neoscada.protocol.iec60870.asdu.message.CounterInterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.message.InterrogationCommand;
 import org.eclipse.neoscada.protocol.iec60870.asdu.types.*;
 import org.eclipse.neoscada.protocol.iec60870.server.data.event.EventQueue;
@@ -117,6 +118,9 @@ public class DataModuleMessageSource implements MessageSource {
 
 		private CauseOfTransmission	expectedCauseOfTransmission;
 
+		/** A counter interrogation, whose qualifier is a QCC */
+		private boolean				counter;
+
 		@Override
 		public String toString()
 		{
@@ -144,6 +148,10 @@ public class DataModuleMessageSource implements MessageSource {
 
 	private final EventQueue<Long>									bitstringQueue;
 	private final EventQueue<Long>									bitstringTsQueue;
+
+	private final EventQueue<BinaryCounterReading>					integratedTotalsQueue;
+
+	private final EventQueue<BinaryCounterReading>					integratedTotalsTsQueue;
 
 	private final List<EventQueue<?>>								buffers					= new ArrayList<>();
 
@@ -202,6 +210,10 @@ public class DataModuleMessageSource implements MessageSource {
 
 		this.bitstringQueue = new EventQueue<>(options.getSpontaneousDuplicates(), new BitstringBuilder(false));
 		this.bitstringTsQueue = new EventQueue<>(options.getSpontaneousDuplicates(), new BitstringBuilder(true));
+		this.integratedTotalsQueue = new EventQueue<>(options.getSpontaneousDuplicates(),
+				new IntegratedTotalsBuilder(false));
+		this.integratedTotalsTsQueue = new EventQueue<>(options.getSpontaneousDuplicates(),
+				new IntegratedTotalsBuilder(true));
 
 		// create initial instance
 		createBackgroundScan();
@@ -223,6 +235,8 @@ public class DataModuleMessageSource implements MessageSource {
 
 		this.buffers.add(this.bitstringQueue);
 		this.buffers.add(this.bitstringTsQueue);
+		this.buffers.add(this.integratedTotalsQueue);
+		this.buffers.add(this.integratedTotalsTsQueue);
 	}
 
 	@Override
@@ -246,7 +260,7 @@ public class DataModuleMessageSource implements MessageSource {
 				// clear state
 				this.currentInterrogation.remove(entry.getKey()); // this will break the entry set iterator
 
-				final InterrogationCommand reply = createCurrentInterrogationReply(entry.getValue(),
+				final Object reply = createCurrentInterrogationReply(entry.getValue(),
 						StandardCause.ACTIVATION_TERMINATION);
 
 				return reply; // we must return since we modified the currentInterrogation map
@@ -360,9 +374,14 @@ public class DataModuleMessageSource implements MessageSource {
 		return null;
 	}
 
-	private static InterrogationCommand createCurrentInterrogationReply(
-			final InterrogationInstance currentInterrogation, final Cause cause)
+	private static Object createCurrentInterrogationReply(final InterrogationInstance currentInterrogation,
+			final Cause cause)
 	{
+		if (currentInterrogation.counter) {
+			return new CounterInterrogationCommand(new ASDUHeader(
+					new CauseOfTransmission(cause, currentInterrogation.expectedCauseOfTransmission.getSourceAddress()),
+					currentInterrogation.asduAddress), (byte)currentInterrogation.qualifierOfInterrogation);
+		}
 		return new InterrogationCommand(new ASDUHeader(
 				new CauseOfTransmission(cause, currentInterrogation.expectedCauseOfTransmission.getSourceAddress()),
 				currentInterrogation.asduAddress), currentInterrogation.qualifierOfInterrogation);
@@ -463,6 +482,104 @@ public class DataModuleMessageSource implements MessageSource {
 			this.bitstringQueue.append(header.getCauseOfTransmission(), header.getAsduAddress(), values);
 
 		this.writer.notifyMoreData();
+	}
+
+	public synchronized void sendIntegratedTotals(final ASDUHeader header,
+			final List<InformationEntry<BinaryCounterReading>> values, final boolean withTimestamps)
+	{
+		recordCause(header.getAsduAddress(), header.getCauseOfTransmission());
+		if (withTimestamps) {
+			this.integratedTotalsTsQueue.append(header.getCauseOfTransmission(), header.getAsduAddress(), values);
+		}
+		else {
+			this.integratedTotalsQueue.append(header.getCauseOfTransmission(), header.getAsduAddress(), values);
+		}
+		this.writer.notifyMoreData();
+	}
+
+	/**
+	 * Start a counter interrogation: confirmed, then the counters the data model pushes, then terminated, as a
+	 * station interrogation is. A request (RQT) other than a group 1 to 4 or all counters is refused.
+	 */
+	public void startCounterInterrogation(final CounterInterrogationCommand msg)
+	{
+		final Cause cause = convertCounterRequest(msg.getRequest());
+		if (cause == null) {
+			logger.info("Refusing unknown counter request (RQT) : {}", msg.getRequest());
+			this.writer.write(msg.mirror(StandardCause.ACTIVATION_CONFIRM, false));
+			this.writer.flush();
+			return;
+		}
+		final byte source = msg.getHeader().getCauseOfTransmission().getSourceAddress();
+		synchronized (this) {
+			if (msg.getHeader().getAsduAddress().isBroadcast()) {
+				this.model.forAllAsdu((final ASDUAddress asduAddress) -> tryStartCounterInterrogation(msg,
+						new InterrogationRequest(asduAddress, cause, msg.getQualifier(), source)), () -> {
+							this.writer.write(msg.mirror(StandardCause.UNKNOWN_ASDU_ADDRESS, false));
+							this.writer.flush();
+						});
+			}
+			else {
+				tryStartCounterInterrogation(msg,
+						new InterrogationRequest(msg.getHeader().getAsduAddress(), cause, msg.getQualifier(), source));
+			}
+		}
+	}
+
+	private void tryStartCounterInterrogation(final CounterInterrogationCommand msg, final InterrogationRequest request)
+	{
+		if (this.currentInterrogation.containsKey(request)) {
+			logger.warn("Counter interrogation already running: {}", request);
+			return;
+		}
+		final InterrogationInstance instance = new InterrogationInstance();
+		instance.state = InterrogationState.WAITING;
+		instance.asduAddress = request.asduAddress;
+		instance.qualifierOfInterrogation = (short)(msg.getQualifier() & 0xFF);
+		instance.counter = true;
+		instance.expectedCauseOfTransmission = new CauseOfTransmission(Causes.valueOf(request.causeValue),
+				request.sourceAddress);
+		final ListenableFuture<Void> future = this.model.readCounters(instance.expectedCauseOfTransmission,
+				request.asduAddress, msg.getFreeze(), () -> confirm(instance), new DataListenerImpl(this));
+		if (future == null) {
+			this.writer.write(msg.mirror(StandardCause.UNKNOWN_ASDU_ADDRESS, false));
+			this.writer.flush();
+			return;
+		}
+		this.currentInterrogation.put(request, instance);
+		Futures.addCallback(future, new FinallyFutureCallback<Void>() {
+
+			@Override
+			public void onFinally()
+			{
+				completeInterrogation(request);
+			}
+		}, this.executor);
+	}
+
+	/** Sends the activation confirmation from the IO loop, and waits for it to be written. */
+	private void confirm(final InterrogationInstance instance)
+	{
+		try {
+			this.executor.submit(() -> {
+				this.writer.write(createCurrentInterrogationReply(instance, StandardCause.ACTIVATION_CONFIRM));
+				this.writer.flush();
+			}).get();
+		}
+		catch (final Exception e) {
+			logger.warn("Failed to send out interrogation confirm", e);
+		}
+	}
+
+	private static Cause convertCounterRequest(final int request)
+	{
+		if (request == CounterInterrogationCommand.REQUEST_GENERAL) {
+			return StandardCause.COUNTER_GENERAL;
+		}
+		if (request >= 1 && request <= 4) {
+			return Causes.valueOf(StandardCause.COUNTER_GENERAL.getValue() + request);
+		}
+		return null;
 	}
 
 	public static class InterrogationException extends Exception {
@@ -668,7 +785,8 @@ public class DataModuleMessageSource implements MessageSource {
 
 		logger.debug("Record cause: {}, {}", asduAddress, causeOfTransmission);
 
-		if (!Causes.isInterrogation(causeOfTransmission.getCause())) {
+		if (!Causes.isInterrogation(causeOfTransmission.getCause())
+				&& !Causes.isCounterInterrogation(causeOfTransmission.getCause())) {
 			return;
 		}
 
