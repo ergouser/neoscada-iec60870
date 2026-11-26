@@ -1,28 +1,124 @@
-IEC-104 (IEC 60870) stuff from Eclipse NeoSCADA repository
-==========================================================
+IEC 60870-5-104 from Eclipse NeoSCADA
+=====================================
 
-This source has been extracted (with git filter-repo) from Eclipse NeoSCADA repository.
-NeoSCADA itself uses Maven to build, but the whole thing is kind of complex beast with dozens
-of modules and dependencies we don't need.
+Eclipse NeoSCADA's IEC 60870-5-104 client and server, as extracted by
+[Syncron Tech](https://github.com/SyncronTech/neoscada-iec60870) from the NeoSCADA repository (see
+[History](#history)), with fixes, IEC 62351-3 TLS, tests and an interoperability suite added in this fork.
+The licence is the Eclipse Public License 1.0, as it was in NeoSCADA.
 
-When writing this, the necessary modules are available in maven repositories, but
-they are old versions (0.4.x) and we need fixes done for 0.5 (which has never been
-released, there are only nightly builds in eclipse project servers). The NeoSCADA
-project itself seems dead now.
+The package and module names are NeoSCADA's, unchanged, and so is the API apart from additions: code written
+against Syncron Tech's 14.0.0 needs no change but for Guava's own between versions 18 and 33.
 
-Also, trying to build those locally with Maven seemed 'hard work' because of the size
-of project.
+Using it
+--------
 
-So what this project does then: It takes necessary sources from neoscada git repository and adds 
-gradle builds for those modules we need.
+From [JitPack](https://jitpack.io/#ergouser/neoscada-iec60870), with the tag as the version:
 
-org.syncrontech.neoscada.protocol.iec60870.server.system project contains implementations for some
-messages that were missing from the Eclipse library.
+```groovy
+repositories { maven { url = 'https://jitpack.io' } }
+
+dependencies {
+    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.client.data:14.1.0'
+    implementation 'com.github.ergouser.neoscada-iec60870:org.eclipse.neoscada.protocol.iec60870.server.data:14.1.0'
+}
+```
+
+The classes run on Java 21 and later. `./gradlew publishToMavenLocal` installs them locally instead, as
+`org.syncrontech.neoscada.protocols:<module>:14.1.0`.
+
+| Module | What it is |
+|---|---|
+| `org.eclipse.neoscada.protocol.iec60870` | APCI and ASDU codecs, protocol options, TLS |
+| `org.eclipse.neoscada.protocol.iec60870.client` | `Client` and `AutoConnectClient` (the controlling station) |
+| `org.eclipse.neoscada.protocol.iec60870.client.data` | a client module delivering values and starting interrogation |
+| `org.eclipse.neoscada.protocol.iec60870.server` | `Server` (the controlled station) |
+| `org.eclipse.neoscada.protocol.iec60870.server.data` | a server module serving a `DataModel`: interrogation, spontaneous and background data, commands |
+| `org.syncrontech.neoscada.protocol.iec60870.server.system` | clock synchronisation and test commands for the server |
+| `org.eclipse.scada.utils` | NeoSCADA's utilities the above need |
+| `...client.data.testing`, `...server.testing` | small example programs |
+
+### TLS (IEC 62351-3)
+
+```java
+TlsOptions tls = TlsOptions.builder()
+        .identity(Path.of("station.crt"), Path.of("station.key"), null)   // PEM; a KeyStore works too
+        .trust(Path.of("utility-ca.crt"))
+        .build();
+
+Server server = new Server(new InetSocketAddress(TlsOptions.DEFAULT_PORT), options, modules, tls);
+AutoConnectClient client = new AutoConnectClient(host, TlsOptions.DEFAULT_PORT, options, modules, listener, tls);
+```
+
+The defaults are the IEC 62351-3 profile: TLS 1.3 and 1.2 only (nothing lower can be enabled), a certificate
+required of the client, ephemeral key exchange with AEAD suites only, the session keys renewed every hour (a key
+update in 1.3, a renegotiation in 1.2), sessions resumable for an hour, and port 19998. Each can be changed for a
+station that needs it. Revocation checking (OCSP, then the CRL) and a check of the server's name against its
+certificate are there to turn on. Keys load from PKCS#8, PKCS#1 or SEC1 PEM without any library beyond the JDK.
+
+Not done: IEC 62351-5 (authentication at the application layer, IEC 60870-5-7) and the security event logging of
+IEC 62351-3 beyond what is logged through SLF4J.
+
+What this fork changed
+----------------------
+
+Since Syncron Tech's 14.0.0:
+
+- **Commands**: the select/execute bit was never sent, so a select arrived as an execute; the qualifier masks took
+  that bit as well; and the positive/negative bit of the cause of transmission was never sent or read, so a
+  negative confirmation looked positive. All were nine-bit masks on one-octet fields.
+- **Link layer**: t1 now supervises sent I frames and STARTDT/STOPDT, not only TESTFR; the first acknowledgement
+  went out after w-1 frames instead of w; a frame too short for its control fields is refused.
+- **TLS** as above, through new constructors of `Client`, `AutoConnectClient` and `Server`; the old ones are
+  unchanged.
+- `DataProcessor` can interrogate named common addresses instead of the broadcast address, which not every station
+  answers.
+- `Server` binds in its constructor, so a port in use fails there, and reports the port it bound.
+- A client's disconnect carries its reason, a TLS refusal included.
+- Gradle 9 wrapper, JitPack, Guava 33, SLF4J 2, Netty 4.1.130.
+
+Testing
+-------
+
+`./gradlew build` runs the unit and loopback suites (no network beyond loopback):
+
+- every registered ASDU type decoded from bytes laid out by hand from the standard, and encoded back;
+- the link layer's framing, k and w windows and t1/t2/t3 timers, on a clock the test moves;
+- a client and a server of this stack exchanging interrogation, spontaneous data, set points and select/execute,
+  in plain TCP and over TLS 1.2 and 1.3, with refusals of missing or untrusted certificates, wrong server names and
+  weak suites, and key renewal under traffic.
+
+`./gradlew interop` (needs Docker) runs it against an independent implementation, the core of
+[IEC60870-5-104-Simulator](https://github.com/Karl-Dai/IEC60870-5-104-Simulator) (MIT), pinned to one commit and
+built from `interop/`: the simulator as slave read and commanded by this client, and as master reading and
+commanding this server, in plain TCP and over TLS 1.2 and 1.3.
+
+Not yet supported
+-----------------
+
+Integrated totals (M_IT, counter interrogation C_CI), step positions (M_ST, C_RC), protection events (M_EP),
+bitstring commands (C_BO), parameter loading (P_ME), file transfer, and normalized values without quality (M_ME_ND).
+A received ASDU of a type not registered is answered with cause 44, unknown type.
+
+History
+-------
+
+This source was extracted (with git filter-repo) from the Eclipse NeoSCADA repository by Syncron Tech, whose
+notes follow.
+
+> NeoSCADA itself uses Maven to build, but the whole thing is kind of complex beast with dozens of modules and
+> dependencies we don't need.
+>
+> When writing this, the necessary modules are available in maven repositories, but they are old versions (0.4.x)
+> and we need fixes done for 0.5 (which has never been released, there are only nightly builds in eclipse project
+> servers). The NeoSCADA project itself seems dead now.
+>
+> `org.syncrontech.neoscada.protocol.iec60870.server.system` contains implementations for some messages that were
+> missing from the Eclipse library.
 
 Building
 --------
 
-Requires JDK 21 or newer and Gradle 8.14: `gradle build`.
+`./gradlew build` with JDK 21 or later.
 
 Related documentation
 ---------------------

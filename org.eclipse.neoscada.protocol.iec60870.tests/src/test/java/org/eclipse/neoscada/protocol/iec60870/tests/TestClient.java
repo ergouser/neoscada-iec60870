@@ -61,6 +61,7 @@ final class TestClient implements AutoCloseable {
 
 	TestClient(final InetSocketAddress server, final ProtocolOptions options, final TlsOptions tls)
 	{
+		// the common address itself, not the broadcast address, which the simulator does not answer
 		final DataProcessor processor = new DataProcessor(this.executor, new DataListener() {
 
 			@Override
@@ -80,7 +81,7 @@ final class TestClient implements AutoCloseable {
 			public void disconnected()
 			{
 			}
-		});
+		}, false, List.of(ASDUAddress.valueOf(1)));
 		this.client = new AutoConnectClient(server.getHostString(), server.getPort(), options,
 				() -> List.of(new DataModule(processor, new DataModuleOptions.Builder().build()), new Capture()),
 				(state, e) -> {

@@ -22,8 +22,8 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Test certificates made with the JDK's keytool, written as PEM files the way a utility hands them out: a CA, a
- * server (EC P-256, for 127.0.0.1) and a client (RSA 2048) signed by it, and a second, untrusted CA with a
- * certificate of its own.
+ * server (EC P-256, for 127.0.0.1), the same server again in RSA, and a client (RSA 2048) signed by it, and a second,
+ * untrusted CA with a certificate of its own.
  */
 final class Certificates {
 
@@ -38,6 +38,14 @@ final class Certificates {
 	final Path clientChain;
 
 	final Path clientKey;
+
+	/**
+	 * A second station identity, RSA, for peers that cannot load the JDK's EC keys: rustls (through ring) wants the
+	 * public key inside an EC PKCS#8 key, and the JDK leaves it out.
+	 */
+	final Path rsaServerChain;
+
+	final Path rsaServerKey;
 
 	final Path rogueCa;
 
@@ -55,6 +63,8 @@ final class Certificates {
 		this.serverChain = issue("server", "CN=Test Station", "EC", "ca", "san=ip:127.0.0.1,dns:localhost");
 		this.clientChain = issue("client", "CN=Test Control Centre", "RSA", "ca", null);
 		this.rogueChain = issue("rogue", "CN=Rogue", "EC", "rogue-ca", "san=ip:127.0.0.1");
+		this.rsaServerChain = issue("rsa-server", "CN=Test Station RSA", "RSA", "ca", "san=ip:127.0.0.1,dns:localhost");
+		this.rsaServerKey = dir.resolve("rsa-server.key");
 		this.serverKey = dir.resolve("server.key");
 		this.clientKey = dir.resolve("client.key");
 		this.rogueKey = dir.resolve("rogue.key");

@@ -1,0 +1,12 @@
+[package]
+name = "iec104-oracle"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Runs the IEC60870-5-104-Simulator core as a slave or a master, for the interoperability tests"
+license = "EPL-1.0"
+
+[dependencies]
+# MIT; pinned so a run is repeatable
+iec104sim-core = { git = "https://github.com/Karl-Dai/IEC60870-5-104-Simulator", rev = "4cd000f0ca39f9bbc7a51237051339ca109e73a9" }
+tokio = { version = "1", features = ["full"] }

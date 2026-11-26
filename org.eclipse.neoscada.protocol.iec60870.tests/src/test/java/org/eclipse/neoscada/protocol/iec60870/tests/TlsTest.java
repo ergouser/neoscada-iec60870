@@ -48,11 +48,23 @@ class TlsTest extends Fixture {
 
 	static TlsOptions.Builder server() throws IOException
 	{
+		return serverOptions(certificates);
+	}
+
+	static TlsOptions.Builder client() throws IOException
+	{
+		return clientOptions(certificates);
+	}
+
+	/** The station's identity, trusting the test CA. */
+	static TlsOptions.Builder serverOptions(final Certificates certificates) throws IOException
+	{
 		return TlsOptions.builder().identity(certificates.serverChain, certificates.serverKey, null)
 				.trust(certificates.ca);
 	}
 
-	static TlsOptions.Builder client() throws IOException
+	/** The control centre's identity, trusting the test CA. */
+	static TlsOptions.Builder clientOptions(final Certificates certificates) throws IOException
 	{
 		return TlsOptions.builder().identity(certificates.clientChain, certificates.clientKey, null)
 				.trust(certificates.ca);

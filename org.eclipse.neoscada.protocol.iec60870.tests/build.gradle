@@ -11,9 +11,19 @@ dependencies {
 tasks.withType(PublishToMavenRepository).configureEach { enabled = false }
 tasks.withType(PublishToMavenLocal).configureEach { enabled = false }
 
+def oracleImage = 'iec104-oracle:local'
+
+def buildOracle = tasks.register('buildOracle', Exec) {
+    description = 'Builds the Docker image of the interoperability oracle from interop/.'
+    commandLine 'docker', 'build', '-q', '-t', oracleImage, rootProject.file('interop').absolutePath
+}
+
 tasks.register('interop', Test) {
     description = 'Runs this stack against the IEC60870-5-104-Simulator in Docker.'
     group = 'verification'
+    dependsOn buildOracle
+    systemProperty 'oracle.image', oracleImage
+    outputs.upToDateWhen { false }
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
     useJUnitPlatform { includeTags 'interop' }
